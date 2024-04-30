@@ -9,15 +9,29 @@
 #include <libbase/uart.h>
 #include <libbase/console.h>
 #include <generated/csr.h>
+#include <generated/soc.h>
 
 #include "i2c0.h"
 #include "i2c1.h"
+#include "LMS64C_protocol.h"
+#include "LimeSDR_XTRX.h"
 
 /*-----------------------------------------------------------------------*/
 /* Constants                                                             */
 /*-----------------------------------------------------------------------*/
 #define LP8758_I2C_ADDR  0x60
 
+/************************** Variable Definitions *****************************/
+uint8_t block, cmd_errors, glEp0Buffer_Rx[64], glEp0Buffer_Tx[64];
+tLMS_Ctrl_Packet *LMS_Ctrl_Packet_Tx = (tLMS_Ctrl_Packet *)glEp0Buffer_Tx;
+tLMS_Ctrl_Packet *LMS_Ctrl_Packet_Rx = (tLMS_Ctrl_Packet *)glEp0Buffer_Rx;
+
+
+uint8_t lms64_packet_pending;
+
+//#define FW_VER 1 // Initial version
+//#define FW_VER 2 // Fix for PLL config. hang when changing from low to high frequency.
+#define FW_VER 3 // Added serial number into GET_INFO cmd
 
 /*-----------------------------------------------------------------------*/
 /* Uart                                                                  */
@@ -95,6 +109,7 @@ static void help(void)
 	puts("i2c_test           - Test I2C Buses");
 	puts("init_pmic          - Initialize DC-DC switching regulators");
 	puts("dump_pmic          - Dump DC-DC switching regulator configuration");
+	puts("tst_cntrl          - Test CNTRL register");
 #ifdef CSR_LEDS_BASE
 	puts("led                - Led demo");
 #endif
@@ -392,6 +407,8 @@ static void console_service(void)
 		init_pmic();
 	else if(strcmp(token, "dump_pmic") == 0)
 		dump_pmic();
+	else if(strcmp(token, "tst_cntrl") == 0)
+		tst_cntrl();
 #ifdef CSR_LEDS_BASE
 	else if(strcmp(token, "led") == 0)
 		led_cmd();
@@ -411,19 +428,126 @@ static void console_service(void)
 	prompt();
 }
 
+/**
+ * Gets 64 bytes packet
+ */
+void getLMS64Packet(uint8_t *buf, uint8_t k)
+{
+	uint8_t cnt = 0;
+	uint32_t *dest = (uint32_t *)buf;
+	for (cnt = 0; cnt < k / sizeof(uint32_t); ++cnt)
+	{
+		dest[cnt] = csr_read_simple((CSR_BASE + 0xd000L));
+	};
+
+}
+
+void tst_cntrl(void){
+	uint32_t val;
+	long int addr;
+	printf("Write to CSR_CNTRL_CNTRL_ADDR begin.\n");
+
+	val = 0;
+	for (long int i=0; i <16; i++) {
+		printf("0x%08lx: 0x%08lx: \n", (CSR_CNTRL_CNTRL_ADDR + i*4), val);
+		csr_write_simple(val, (CSR_CNTRL_CNTRL_ADDR + i*4));
+		busy_wait(5);
+
+		val++;
+	}
+}
+
+
+void lms64c_isr(void){
+	uint32_t *dest = (uint32_t *)glEp0Buffer_Tx;
+	uint32_t read_value;
+
+
+	printf("ISR: LMS64C Entry\n");
+
+	lms64_packet_pending = 1;
+	getLMS64Packet(glEp0Buffer_Rx, 64);
+
+	memset(glEp0Buffer_Tx, 0, sizeof(glEp0Buffer_Tx)); // fill whole tx buffer with zeros
+	cmd_errors = 0;
+
+	LMS_Ctrl_Packet_Tx->Header.Command = LMS_Ctrl_Packet_Rx->Header.Command;
+	LMS_Ctrl_Packet_Tx->Header.Data_blocks = LMS_Ctrl_Packet_Rx->Header.Data_blocks;
+	LMS_Ctrl_Packet_Tx->Header.Periph_ID = LMS_Ctrl_Packet_Rx->Header.Periph_ID;
+	LMS_Ctrl_Packet_Tx->Header.Status = STATUS_BUSY_CMD;
+
+	switch (LMS_Ctrl_Packet_Rx->Header.Command)
+	{
+	case CMD_GET_INFO:
+
+		LMS_Ctrl_Packet_Tx->Data_field[0] = FW_VER;
+		LMS_Ctrl_Packet_Tx->Data_field[1] = DEV_TYPE;
+		LMS_Ctrl_Packet_Tx->Data_field[2] = LMS_PROTOCOL_VER;
+		LMS_Ctrl_Packet_Tx->Data_field[3] = HW_VER;
+		LMS_Ctrl_Packet_Tx->Data_field[4] = EXP_BOARD;
+
+		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
+		break;
+
+	default:
+		/* This is unknown request. */
+		// isHandled = CyFalse;
+		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_UNKNOWN_CMD;
+		break;
+	};
+
+	// Send response to the command
+	for (int i = 0; i < 64 / sizeof(uint32_t); ++i)
+	{
+		csr_write_simple(dest[i], (CSR_CNTRL_CNTRL_ADDR + i*4));
+		//AXI_TO_NATIVE_FIFO_mWriteReg(XPAR_AXI_TO_NATIVE_FIFO_0_S00_AXI_BASEADDR, AXI_TO_NATIVE_FIFO_S00_AXI_SLV_REG0_OFFSET, dest[i]);
+	}
+
+	CNTRL_ev_pending_write(1);  //Clear interrupt
+	CNTRL_ev_enable_write(1);   // re-enable the event handler
+	printf("ISR: LMS64C exit\n");
+
+}
+
+static void lms64c_init(void){
+	uint32_t irq_mask;
+	printf("CNTRL IRQ initialization \n");
+
+	CNTRL_ev_pending_write(CNTRL_ev_pending_read());
+	irq_setmask(irq_getmask() | (1 << CNTRL_INTERRUPT));
+	CNTRL_ev_enable_write(1);
+
+	irq_mask = irq_getmask();
+	printf("0x%08lx:\n", irq_mask);
+	irq_attach(CNTRL_INTERRUPT, lms64c_isr);
+
+}
+
 int main(void)
 {
+
 #ifdef CONFIG_CPU_HAS_INTERRUPT
 	irq_setmask(0);
 	irq_setie(1);
 #endif
 	uart_init();
+	lms64c_init();
+
 
 	help();
 	prompt();
 
 	while(1) {
 		console_service();
+
+		if (lms64_packet_pending == 1) {
+			printf("Response to LMS64 packet\n");
+			for (long int i=0; i <16; i++) {
+				printf("0x%08lx: 0x%08lx: \n", (CSR_CNTRL_CNTRL_ADDR + i*4), csr_read_simple((CSR_CNTRL_CNTRL_ADDR + i*4)));
+			}
+				lms64_packet_pending = 0;
+
+		}
 	}
 
 	return 0;
