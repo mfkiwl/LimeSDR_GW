@@ -44,6 +44,7 @@ from litepcie.software import generate_litepcie_software
 from litex.soc.cores.jtag import XilinxJTAG
 
 from gateware.GpioTop import GpioTop
+from gateware.fpgacfg import fpgacfg_csr
 
 # CRG ----------------------------------------------------------------------------------------------
 
@@ -199,6 +200,8 @@ class BaseSoC(SoCCore):
         # FPGA_I2C2 Bus:
         # - PMIC (IC31)        (LP8758  @ 0x60).
         self.submodules.i2c1 = I2CMaster(pads=platform.request("i2c", 1))
+
+        self.submodules.fpgacfg = fpgacfg_csr()
 
 
 
