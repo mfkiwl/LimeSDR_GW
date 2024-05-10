@@ -15,6 +15,10 @@
 #include "i2c1.h"
 #include "LMS64C_protocol.h"
 #include "LimeSDR_XTRX.h"
+#include "regremap.h"
+
+#define sbi(p, n) ((p) |= (1UL << (n)))
+#define cbi(p, n) ((p) &= ~(1 << (n)))
 
 /*-----------------------------------------------------------------------*/
 /* Constants                                                             */
@@ -428,6 +432,20 @@ static void console_service(void)
 	prompt();
 }
 
+/**	This function checks if all blocks could fit in data field.
+ *	If blocks will not fit, function returns TRUE. */
+unsigned char Check_many_blocks(unsigned char block_size)
+{
+	if (LMS_Ctrl_Packet_Rx->Header.Data_blocks > (sizeof(LMS_Ctrl_Packet_Tx->Data_field) / block_size))
+	{
+		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_BLOCKS_ERROR_CMD;
+		return 1;
+	}
+	else
+		return 0;
+	return 1;
+}
+
 /**
  * Gets 64 bytes packet
  */
@@ -435,9 +453,9 @@ void getLMS64Packet(uint8_t *buf, uint8_t k)
 {
 	uint8_t cnt = 0;
 	uint32_t *dest = (uint32_t *)buf;
-	for (cnt = 0; cnt < k / sizeof(uint32_t); ++cnt)
+	for (cnt = 0; cnt < k / sizeof(uint32_t); cnt++)
 	{
-		dest[cnt] = csr_read_simple((CSR_BASE + 0xd000L));
+		dest[cnt] = csr_read_simple((CSR_CNTRL_CNTRL_ADDR + cnt*4));
 	};
 
 }
@@ -462,8 +480,10 @@ void lms64c_isr(void){
 	uint32_t *dest = (uint32_t *)glEp0Buffer_Tx;
 	uint32_t read_value;
 
+	uint8_t reg_array[4];
 
-	printf("ISR: LMS64C Entry\n");
+
+	//printf("ISR: LMS64C Entry\n");
 
 	lms64_packet_pending = 1;
 	getLMS64Packet(glEp0Buffer_Rx, 64);
@@ -489,6 +509,44 @@ void lms64c_isr(void){
 		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
 		break;
 
+	case CMD_BRDSPI16_WR:
+		if (Check_many_blocks(4))
+			break;
+
+		for (block = 0; block < LMS_Ctrl_Packet_Rx->Header.Data_blocks; block++)
+		{
+			// write reg addr
+			//sbi(LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 4)], 7); // set write bit
+			// Clearing write bit in address field because we are not using SPI registers here
+			cbi(LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)], 7); // clear write bit
+
+			writeCSR(&LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 4)], &LMS_Ctrl_Packet_Rx->Data_field[2 + (block * 4)]);
+		}
+		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
+		break;
+
+	case CMD_BRDSPI16_RD:
+		if (Check_many_blocks(4))
+			break;
+
+		for (block = 0; block < LMS_Ctrl_Packet_Rx->Header.Data_blocks; block++)
+		{
+
+			// write reg addr
+			cbi(LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)], 7); // clear write bit
+
+			readCSR(&LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)], reg_array);
+			LMS_Ctrl_Packet_Tx->Data_field[2 + (block * 4)] = reg_array[1];
+			LMS_Ctrl_Packet_Tx->Data_field[3 + (block * 4)] = reg_array[0];
+
+			printf("value: 0x%X\n", reg_array[0]);
+			printf("value: 0x%X\n", reg_array[1]);
+
+		}
+
+		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
+		break;
+
 	default:
 		/* This is unknown request. */
 		// isHandled = CyFalse;
@@ -500,12 +558,11 @@ void lms64c_isr(void){
 	for (int i = 0; i < 64 / sizeof(uint32_t); ++i)
 	{
 		csr_write_simple(dest[i], (CSR_CNTRL_CNTRL_ADDR + i*4));
-		//AXI_TO_NATIVE_FIFO_mWriteReg(XPAR_AXI_TO_NATIVE_FIFO_0_S00_AXI_BASEADDR, AXI_TO_NATIVE_FIFO_S00_AXI_SLV_REG0_OFFSET, dest[i]);
 	}
 
 	CNTRL_ev_pending_write(1);  //Clear interrupt
 	CNTRL_ev_enable_write(1);   // re-enable the event handler
-	printf("ISR: LMS64C exit\n");
+	//printf("ISR: LMS64C exit\n");
 
 }
 
