@@ -1,5 +1,7 @@
 # LimeSDR-XTRX Gateware 
 
+**NOTE:** vexriscv cpu is used for this example
+
 Cloning repo:
 ```
 git clone https://github.com/myriadrf/LimeSDR-XTRX_LiteX_GW.git
@@ -31,41 +33,16 @@ Required hardware:
    GPIO3P(TX)  ->    RX
    ```
 
-Steps to load build/load gateware, load firmware and launch debug:
-
+Steps to load build/load gateware, load firmware:
 ```
 # Build/Load gateware bitstream:
-./LimeSDR_XTRX.py --integrated-main-ram-size 0x8000 --build --load --uart-name=gpio_serial --cpu-type=vexriscv_smp --with-rvc  --with-privileged-debug --hardware-breakpoints 4 --csr-csv=csr.csv
+./LimeSDR_XTRX.py --integrated-main-ram-size 0x8000 --uart-name=gpio_serial --cpu-type=vexriscv  --csr-csv=csr.csv --with-pcie --build --driver --load
 
 # Build firmware:
 cd firmware && make clean all && cd ../
 
 # Load firmware trough serial
 litex_term --csr-csv csr.csv /dev/ttyUSB0 --kernel firmware/demo.bin
-
-# Run OpenOCD with the specified configurations:
-openocd -f ./limesdr_xtrx.cfg -c "set TAP_NAME xc7.tap" -f ./riscv_jtag_tunneled.tcl
-
-# Connecting GDB for Debugging:
-gdb-multiarch -q firmware/demo.elf -ex "target extended-remote localhost:3333"
-```
-
-Note that instead of usign GDB directly, Eclipse IDE can be configured to debug code in more user friendly way. Follow this guide to configure Eclipse IDE:
-
-https://github.com/SpinalHDL/VexRiscv?tab=readme-ov-file#using-eclipse-to-run-and-debug-the-software
-
-
-## Build gateware and load firmware trough JTAG
-
-```
-# Build/Load gateware bitstream:
-./LimeSDR_XTRX.py --integrated-main-ram-size 0x8000 --build --load --uart-name=jtag_uart --cpu-type=vexriscv_smp --with-rvc  --with-privileged-debug --hardware-breakpoints 4
-
-# Build firmware:
-cd firmware && make clean all && cd ../
-
-# Load CPU firmware:
-litex_term jtag --jtag-config=openocd_xc7_ft2232.cfg --kernel firmware/demo.bin
 ```
 
 
