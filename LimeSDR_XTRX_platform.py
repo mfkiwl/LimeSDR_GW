@@ -103,6 +103,16 @@ _io = [
         IOStandard("LVCMOS33")
     ),
 
+    # LMS7002M SPI
+    ("lms7002m_spi", 0,
+        Subsignal("FPGA_SPI_SCLK",   Pins("W14")),
+        Subsignal("FPGA_SPI_LMS_SS", Pins("W13")),
+        Subsignal("FPGA_SPI_MOSI",   Pins("W16"), Misc("PULLDOWN=True")),
+        Subsignal("FPGA_SPI_MISO",   Pins("W15"), Misc("PULLDOWN=True")),
+        # IOStandard/Slew Rate.
+        IOStandard("LVCMOS33"),
+        Misc("SLEW=FAST"),
+     ),
     # RF-IC / LMS7002M.
     ("lms7002m", 0,
         # Control.
@@ -110,12 +120,6 @@ _io = [
         Subsignal("LMS_CORE_LDO_EN",Pins("W17")),
         Subsignal("LMS_RXEN",       Pins("W18")),
         Subsignal("LMS_TXEN",       Pins("W19")),
-
-        # SPI.
-        Subsignal("FPGA_SPI_SCLK",  Pins("W14")),
-        Subsignal("FPGA_SPI_LMS_SS",Pins("W13")),
-        Subsignal("FPGA_SPI_MOSI",  Pins("W16"), Misc("PULLDOWN=True")),
-        Subsignal("FPGA_SPI_MISO",  Pins("W15"), Misc("PULLDOWN=True")),
 
         # RX-Interface (LMS -> FPGA).
         Subsignal("LMS_DIQ1",       Pins("J17 H17 H19 K17 G17 V16 J19 M19 P17 N19 U17 U16")),
