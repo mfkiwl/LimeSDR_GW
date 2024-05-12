@@ -42,6 +42,7 @@ from gateware.s7pciephy import S7PCIEPHY
 from litepcie.software import generate_litepcie_software
 
 from litex.soc.cores.jtag import XilinxJTAG
+from litex.soc.cores.spi import SPIMaster
 
 from gateware.GpioTop import GpioTop
 from gateware.fpgacfg import fpgacfg_csr
@@ -203,7 +204,21 @@ class BaseSoC(SoCCore):
 
         self.submodules.fpgacfg = fpgacfg_csr()
 
+        # LMS SPI
+        # Create a new record to rename spi signals
+        temp_var = platform.request("lms7002m_spi")
+        lms_spi_pads = Record(layout = [("clk", 1), ("cs_n", 1), ("mosi", 1), ("miso", 1)])
+        lms_spi_pads.clk = temp_var.FPGA_SPI_SCLK
+        lms_spi_pads.cs_n = temp_var.FPGA_SPI_LMS_SS
+        lms_spi_pads.mosi = temp_var.FPGA_SPI_MOSI
+        lms_spi_pads.miso = temp_var.FPGA_SPI_MISO
 
+        self.submodules.lms_spi = SPIMaster(
+            pads=lms_spi_pads,
+            data_width=32,
+            sys_clk_freq=sys_clk_freq,
+            spi_clk_freq=1e6
+        )
 
 
 

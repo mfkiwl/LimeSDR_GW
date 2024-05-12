@@ -114,6 +114,8 @@ static void help(void)
 	puts("init_pmic          - Initialize DC-DC switching regulators");
 	puts("dump_pmic          - Dump DC-DC switching regulator configuration");
 	puts("tst_cntrl          - Test CNTRL register");
+	puts("lms_spi_wr         - write a value to LMS SPI register");
+	puts("lms_spi_rd         - read a value from LMS SPI register");
 #ifdef CSR_LEDS_BASE
 	puts("led                - Led demo");
 #endif
@@ -203,6 +205,28 @@ static void helloc_cmd(void)
 	printf("Hello C demo...\n");
 	helloc();
 }
+
+static void lms_spi_wr(void)
+{
+	uint16_t addr = 0;
+	uint16_t val = 0;
+	printf("Enter address in hex:");
+	scanf("%x", &addr);
+	printf("\nEnter value in hex:");
+	scanf("%x", &val);
+	lms_spi_write(addr,val);
+}
+
+static void lms_spi_rd(void)
+{
+	uint16_t addr = 0;
+	uint16_t val=0;
+	printf("Enter address in hex:");
+	scanf("%x", &addr);
+	val = lms_spi_read(addr);
+	printf("\n Addr:0x%x Val:0x%x \n", addr, val);
+}
+
 
 #ifdef WITH_CXX
 extern void hellocpp(void);
@@ -405,6 +429,10 @@ static void console_service(void)
 		help();
 	else if(strcmp(token, "reboot") == 0)
 		reboot_cmd();
+	else if(strcmp(token, "lms_spi_wr") == 0)
+		lms_spi_wr();
+	else if(strcmp(token, "lms_spi_rd") == 0)
+			lms_spi_rd();
 	else if(strcmp(token, "i2c_test") == 0)
 		i2c_test();
 	else if(strcmp(token, "init_pmic") == 0)
