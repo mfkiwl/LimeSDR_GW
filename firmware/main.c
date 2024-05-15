@@ -602,11 +602,11 @@ void lms64c_isr(void){
             for (block = 0; block < LMS_Ctrl_Packet_Rx->Header.Data_blocks; block++)
             {
                 // Parse address
-                addr = LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)];
-                addr = (addr<<8) | LMS_Ctrl_Packet_Rx->Data_field[1 + (block * 2)];
+                addr = LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 4)];
+                addr = (addr<<8) | LMS_Ctrl_Packet_Rx->Data_field[1 + (block * 4)];
                 // Parse value
-                val = LMS_Ctrl_Packet_Rx->Data_field[2 + (block * 2)];
-                val = (val<<8) | LMS_Ctrl_Packet_Rx->Data_field[3 + (block * 2)];
+                val = LMS_Ctrl_Packet_Rx->Data_field[2 + (block * 4)];
+                val = (val<<8) | LMS_Ctrl_Packet_Rx->Data_field[3 + (block * 4)];
                 // Write
                 lms_spi_write(addr,val);
 
