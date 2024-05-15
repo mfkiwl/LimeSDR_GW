@@ -16,6 +16,7 @@
 #include "LMS64C_protocol.h"
 #include "LimeSDR_XTRX.h"
 #include "regremap.h"
+#include "lms7002m.h"
 
 #define sbi(p, n) ((p) |= (1UL << (n)))
 #define cbi(p, n) ((p) &= ~(1 << (n)))
@@ -211,18 +212,19 @@ static void lms_spi_wr(void)
 	uint16_t addr = 0;
 	uint16_t val = 0;
 	printf("Enter address in hex:");
-	scanf("%x", &addr);
+	scanf("%hx", &addr);
 	printf("\nEnter value in hex:");
-	scanf("%x", &val);
+	scanf("%hx", &val);
+    printf("\n");
 	lms_spi_write(addr,val);
 }
 
 static void lms_spi_rd(void)
 {
 	uint16_t addr = 0;
-	uint16_t val=0;
+	uint16_t val;
 	printf("Enter address in hex:");
-	scanf("%x", &addr);
+	scanf("%hx", &addr);
 	val = lms_spi_read(addr);
 	printf("\n Addr:0x%x Val:0x%x \n", addr, val);
 }
@@ -460,6 +462,19 @@ static void console_service(void)
 	prompt();
 }
 
+/** Checks if peripheral ID is valid.
+ Returns 1 if valid, else 0. */
+unsigned char Check_Periph_ID(unsigned char max_periph_id, unsigned char Periph_ID)
+{
+    if (LMS_Ctrl_Packet_Rx->Header.Periph_ID > max_periph_id)
+    {
+        LMS_Ctrl_Packet_Tx->Header.Status = STATUS_INVALID_PERIPH_ID_CMD;
+        return 0;
+    }
+    else
+        return 1;
+}
+
 /**	This function checks if all blocks could fit in data field.
  *	If blocks will not fit, function returns TRUE. */
 unsigned char Check_many_blocks(unsigned char block_size)
@@ -509,7 +524,8 @@ void lms64c_isr(void){
 	uint32_t read_value;
 
 	uint8_t reg_array[4];
-
+    uint16_t addr;
+    uint16_t val;
 
 	//printf("ISR: LMS64C Entry\n");
 
@@ -567,20 +583,69 @@ void lms64c_isr(void){
 			LMS_Ctrl_Packet_Tx->Data_field[2 + (block * 4)] = reg_array[1];
 			LMS_Ctrl_Packet_Tx->Data_field[3 + (block * 4)] = reg_array[0];
 
-			printf("value: 0x%X\n", reg_array[0]);
-			printf("value: 0x%X\n", reg_array[1]);
+//			printf("value: 0x%X\n", reg_array[0]);
+//			printf("value: 0x%X\n", reg_array[1]);
 
 		}
 
 		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
 		break;
 
-	default:
+            // COMMAND LMS WRITE
+
+        case CMD_LMS7002_WR:
+            if (!Check_Periph_ID(MAX_ID_LMS7, LMS_Ctrl_Packet_Rx->Header.Periph_ID))
+                break;
+            if (Check_many_blocks(4))
+                break;
+
+
+            for (block = 0; block < LMS_Ctrl_Packet_Rx->Header.Data_blocks; block++)
+            {
+                // Parse address
+                addr = LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)];
+                addr = (addr<<8) | LMS_Ctrl_Packet_Rx->Data_field[1 + (block * 2)];
+                // Parse value
+                val = LMS_Ctrl_Packet_Rx->Data_field[2 + (block * 2)];
+                val = (val<<8) | LMS_Ctrl_Packet_Rx->Data_field[3 + (block * 2)];
+                // Write
+                lms_spi_write(addr,val);
+
+            }
+
+            LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
+            break;
+
+            // COMMAND LMS READ
+
+        case CMD_LMS7002_RD:
+            if (Check_many_blocks(4))
+                break;
+
+            for (block = 0; block < LMS_Ctrl_Packet_Rx->Header.Data_blocks; block++)
+            {
+                // Parse address
+                addr = LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)];
+                addr = (addr<<8) | LMS_Ctrl_Packet_Rx->Data_field[1 + (block * 2)];
+                // Read
+                val = lms_spi_read(addr);
+                // Return value and address
+                LMS_Ctrl_Packet_Tx->Data_field[0 + (block * 4)] = LMS_Ctrl_Packet_Rx->Data_field[0 + (block * 2)];
+                LMS_Ctrl_Packet_Tx->Data_field[1 + (block * 4)] = LMS_Ctrl_Packet_Rx->Data_field[1 + (block * 2)];
+                LMS_Ctrl_Packet_Tx->Data_field[2 + (block * 4)] = (val>>8) & 0xFF;
+                LMS_Ctrl_Packet_Tx->Data_field[3 + (block * 4)] = val & 0xFF;
+            }
+
+            LMS_Ctrl_Packet_Tx->Header.Status = STATUS_COMPLETED_CMD;
+            break;
+
+
+        default:
 		/* This is unknown request. */
 		// isHandled = CyFalse;
 		LMS_Ctrl_Packet_Tx->Header.Status = STATUS_UNKNOWN_CMD;
 		break;
-	};
+	}
 
 	// Send response to the command
 	for (int i = 0; i < 64 / sizeof(uint32_t); ++i)
