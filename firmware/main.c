@@ -419,6 +419,21 @@ static void init_pmic(void)
 /* Console service / Main                                                */
 /*-----------------------------------------------------------------------*/
 
+void tst_cntrl(void){
+    uint32_t val;
+    long int addr;
+    printf("Write to CSR_CNTRL_CNTRL_ADDR begin.\n");
+
+    val = 0;
+    for (long int i=0; i <16; i++) {
+        printf("0x%08lx: 0x%08x: \n", (CSR_CNTRL_CNTRL_ADDR + i*4), val);
+        csr_write_simple(val, (CSR_CNTRL_CNTRL_ADDR + i*4));
+        busy_wait(5);
+
+        val++;
+    }
+}
+
 static void console_service(void)
 {
 	char *str;
@@ -464,7 +479,7 @@ static void console_service(void)
 
 /** Checks if peripheral ID is valid.
  Returns 1 if valid, else 0. */
-unsigned char Check_Periph_ID(unsigned char max_periph_id, unsigned char Periph_ID)
+unsigned char Check_Periph_ID(unsigned char max_periph_id)
 {
     if (LMS_Ctrl_Packet_Rx->Header.Periph_ID > max_periph_id)
     {
@@ -486,7 +501,6 @@ unsigned char Check_many_blocks(unsigned char block_size)
 	}
 	else
 		return 0;
-	return 1;
 }
 
 /**
@@ -499,23 +513,8 @@ void getLMS64Packet(uint8_t *buf, uint8_t k)
 	for (cnt = 0; cnt < k / sizeof(uint32_t); cnt++)
 	{
 		dest[cnt] = csr_read_simple((CSR_CNTRL_CNTRL_ADDR + cnt*4));
-	};
-
-}
-
-void tst_cntrl(void){
-	uint32_t val;
-	long int addr;
-	printf("Write to CSR_CNTRL_CNTRL_ADDR begin.\n");
-
-	val = 0;
-	for (long int i=0; i <16; i++) {
-		printf("0x%08lx: 0x%08lx: \n", (CSR_CNTRL_CNTRL_ADDR + i*4), val);
-		csr_write_simple(val, (CSR_CNTRL_CNTRL_ADDR + i*4));
-		busy_wait(5);
-
-		val++;
 	}
+
 }
 
 
@@ -594,7 +593,7 @@ void lms64c_isr(void){
             // COMMAND LMS WRITE
 
         case CMD_LMS7002_WR:
-            if (!Check_Periph_ID(MAX_ID_LMS7, LMS_Ctrl_Packet_Rx->Header.Periph_ID))
+            if (!Check_Periph_ID(MAX_ID_LMS7))
                 break;
             if (Check_many_blocks(4))
                 break;
@@ -668,7 +667,7 @@ static void lms64c_init(void){
 	CNTRL_ev_enable_write(1);
 
 	irq_mask = irq_getmask();
-	printf("0x%08lx:\n", irq_mask);
+	printf("0x%08x:\n", irq_mask);
 	irq_attach(CNTRL_INTERRUPT, lms64c_isr);
 
 }
